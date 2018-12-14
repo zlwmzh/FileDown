@@ -1,4 +1,4 @@
-package com.micky.www.filedown;
+package com.micky.www.filedownlibrary;
 
 import android.util.Log;
 
@@ -8,7 +8,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import io.reactivex.Observable;
-import io.reactivex.annotations.NonNull;
 import io.reactivex.functions.BiFunction;
 import io.reactivex.functions.Function;
 import io.reactivex.schedulers.Schedulers;

@@ -41,5 +41,15 @@
             android:id="@+id/resume"
             android:layout_marginLeft="5dp"/>
     </LinearLayout>
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="清空数据库"
+        android:id="@+id/clean"/>
+    <android.support.v7.widget.RecyclerView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:id="@+id/recyclerview"></android.support.v7.widget.RecyclerView>
 
 </LinearLayout>

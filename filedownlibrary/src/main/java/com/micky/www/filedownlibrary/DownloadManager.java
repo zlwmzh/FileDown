@@ -1,9 +1,10 @@
-package com.micky.www.filedown;
+package com.micky.www.filedownlibrary;
 
 import android.content.Context;
 import android.os.Environment;
 import android.util.Log;
 
+import com.greendao.gen.DownloadInfoDao;
 import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
 
 import java.io.File;
@@ -41,8 +42,7 @@ public class DownloadManager implements DownloadProgressListener{
             File.separator +"mickydown"+File.separator;
     private DownloadManager()
     {
-       // 信息下载类
-       info = new DownloadInfo();
+
     }
 
     /**
@@ -77,7 +77,7 @@ public class DownloadManager implements DownloadProgressListener{
             public void accept(Integer integer) throws Exception {
                 if (progressObserver != null)
                 {
-                    progressObserver.progressChanger(info.getReadLength(), info.getContentLength(), done);
+                    progressObserver.progressChanger(info.getReadLength(), info.getContentLength(), done, info.getUrl());
                 }
             }
         });
@@ -89,11 +89,28 @@ public class DownloadManager implements DownloadProgressListener{
      */
     public void start(String url)
     {
-       // 设置本地保存路径
-       info.setLocalPath(mSaveFilePath+getFileName(url));
-       // 设置下载路径
-       info.setUrl(url);
-       // 拦截器
+        // 首先查找此链接数据库中是否已经存在对应的下载
+        info = App.getInstances().getDaoSession().getDownloadInfoDao().queryBuilder().where(DownloadInfoDao.Properties.Url.eq(url)).unique();
+        if (info == null)
+        {
+            info = new DownloadInfo();
+        }
+        // 判断是否已经下载完成
+        boolean isComplete = info.getIsComplete();
+        if (isComplete)
+        {
+            // 回掉下载完成 不在继续下载
+            if (progressObserver != null)
+            {
+                progressObserver.complete(url);
+            }
+            return;
+        }
+        // 设置本地保存路径
+        info.setLocalPath(mSaveFilePath+getFileName(url));
+        // 设置下载路径
+        info.setUrl(url);
+        // 拦截器
         DownloadInterceptor interceptor = new DownloadInterceptor(this);
         OkHttpClient.Builder builder = new OkHttpClient.Builder();
         // 设置连接超时时间为8s
@@ -125,41 +142,50 @@ public class DownloadManager implements DownloadProgressListener{
      */
     protected void download()
     {
-       Log.d(TAG,"info："+info);
+        Log.d(TAG,"info："+info);
         service.download("bytes=" + info.getReadLength() + "-",info.getUrl())
-       .subscribeOn(Schedulers.io())
-       .unsubscribeOn(Schedulers.io())
-               .retryWhen(new RetryWhenNetworkException())
-               .map(new Function<ResponseBody, DownloadInfo>() {
-                   @Override
-                   public DownloadInfo apply(@NonNull ResponseBody responseBody) throws Exception {
-                       //写入文件
-                       FileUtil.writeCache(responseBody, new File(info.getLocalPath()), info);
-                       return info;
-                   }
-               })
-       .observeOn(AndroidSchedulers.mainThread())
-       .subscribeWith(new Observer<DownloadInfo>() {
-           @Override
-           public void onSubscribe(@NonNull Disposable d) {
-               disposable = d;
-           }
+                .subscribeOn(Schedulers.io())
+                .unsubscribeOn(Schedulers.io())
+                .retryWhen(new RetryWhenNetworkException())
+                .map(new Function<ResponseBody, DownloadInfo>() {
+                    @Override
+                    public DownloadInfo apply(@NonNull ResponseBody responseBody) throws Exception {
+                        //写入文件
+                        FileUtil.writeCache(responseBody, new File(info.getLocalPath()), info);
+                        return info;
+                    }
+                })
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribeWith(new Observer<DownloadInfo>() {
+                    @Override
+                    public void onSubscribe(@NonNull Disposable d) {
+                        disposable = d;
+                    }
 
-           @Override
-           public void onNext(@NonNull DownloadInfo downloadInfo) {
-              Log.d(TAG,"onNext："+downloadInfo);
-           }
+                    @Override
+                    public void onNext(@NonNull DownloadInfo downloadInfo) {
+                        Log.d(TAG,"onNext："+downloadInfo);
+                    }
 
-           @Override
-           public void onError(@NonNull Throwable e) {
-               Log.d(TAG,"onError："+e.getMessage());
-           }
+                    @Override
+                    public void onError(@NonNull Throwable e) {
+                        Log.d(TAG,"onError："+e.getMessage());
+                        // 下载错误，保存当前的info
+                        saveInfoToDb();
+                    }
 
-           @Override
-           public void onComplete() {
-               Log.d(TAG,"onComplete");
-           }
-       });
+                    @Override
+                    public void onComplete() {
+                        Log.d(TAG,"onComplete");
+                        // 下载完成，设置标识为已完成状态
+                        if (progressObserver != null)
+                        {
+                            progressObserver.complete(info.getUrl());
+                        }
+                        info.setIsComplete(true);
+                        saveInfoToDb();
+                    }
+                });
 
     }
 
@@ -168,9 +194,11 @@ public class DownloadManager implements DownloadProgressListener{
      */
     public void pause()
     {
-        if (disposable != null && disposable.isDisposed())
+        if (disposable != null)
         {
             disposable.dispose();
+            // 暂停时需要保持相关信息
+            saveInfoToDb();
         }
     }
 
@@ -196,6 +224,20 @@ public class DownloadManager implements DownloadProgressListener{
         }
     }
 
+    /**
+     *  保存当前信息到数据库
+     */
+    protected void saveInfoToDb()
+    {
+        App.getInstances().getDaoSession().getDownloadInfoDao().save(info);
+    }
+
+    public void cleanDataBase()
+    {
+        App.getInstances().getDaoSession().getDownloadInfoDao().deleteAll();
+      //  Log.d(TAG,"DataBase："+App.getInstances().getDaoSession().getDownloadInfoDao().)
+    }
+
     public String getDiskCacheDir(Context context) {
         String cachePath = null;
         if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())
@@ -212,7 +254,8 @@ public class DownloadManager implements DownloadProgressListener{
      */
     public interface ProgressListener
     {
-        void progressChanger(long read, long contentLength, boolean done);
+        void progressChanger(long read, long contentLength, boolean done, String url);
+        void complete(String url);
     }
 
     public void setProgressListener(ProgressListener progressObserver)
@@ -221,3 +264,4 @@ public class DownloadManager implements DownloadProgressListener{
     }
 
 }
+

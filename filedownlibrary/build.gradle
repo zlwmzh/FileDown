@@ -1,5 +1,5 @@
 apply plugin: 'com.android.library'
-
+apply plugin: 'org.greenrobot.greendao'
 android {
     compileSdkVersion 27
     buildToolsVersion "27.0.2"
@@ -19,6 +19,14 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    // schemaVersion--> 指定数据库schema版本号，迁移等操作会用到;
+    // daoPackage --> dao的包名，包名默认是entity所在的包；
+    // targetGenDir --> 生成数据库文件的目录;
+    greendao{
+        schemaVersion 1
+        daoPackage 'com.greendao.gen'
+        targetGenDir 'src/main/java'
+    }
 }
 
 dependencies {
@@ -27,5 +35,12 @@ dependencies {
         exclude group: 'com.android.support', module: 'support-annotations'
     })
     compile 'com.android.support:appcompat-v7:27.+'
+    compile 'org.greenrobot:greendao:3.2.2' // add library
+    compile 'org.greenrobot:greendao-generator:3.2.2'
+    compile 'com.squareup.retrofit2:retrofit:2.5.0'
+    compile "io.reactivex.rxjava2:rxjava:2.2.4"
+    compile  'io.reactivex.rxjava2:rxandroid:2.1.0'
+    compile 'com.squareup.retrofit2:converter-gson:2.5.0'
+    compile 'com.jakewharton.retrofit:retrofit2-rxjava2-adapter:1.0.0'
     testCompile 'junit:junit:4.12'
 }

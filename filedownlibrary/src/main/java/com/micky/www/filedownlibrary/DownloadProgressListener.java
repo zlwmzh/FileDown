@@ -1,12 +1,11 @@
-package com.micky.www.filedown;
+package com.micky.www.filedownlibrary;
 
 /**
- * Created by Micky on 2018/12/12.
- * 进度回掉监听
+ * Created by Micky on 2018/12/14.
+ * 进度回掉接口
  */
 
 public interface DownloadProgressListener {
-
     /**
      * @param read 已下载长度
      * @param contentLength 总长度

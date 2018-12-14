@@ -1,4 +1,4 @@
-package com.micky.www.filedown;
+package com.micky.www.filedownlibrary;
 
 
 import io.reactivex.Observable;
@@ -22,5 +22,5 @@ public interface DownLoadService {
      */
     @Streaming
     @GET
-    Observable<ResponseBody> download(@Header("RANGE")String start, @Url String url);
+    Observable<ResponseBody> download(@Header("RANGE") String start, @Url String url);
 }
