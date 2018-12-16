@@ -32,11 +32,15 @@ import retrofit2.converter.gson.GsonConverterFactory;
 public class DownloadManager implements DownloadProgressListener{
     private static final String TAG = "DownloadManager";
 
-    protected ProgressListener progressObserver;
+    protected DownloadListener progressObserver;
     protected DownloadInfo info;
     protected DownLoadService service;
 
     private Disposable disposable;
+    // 当前状态
+    private int mDownStatus = DownloadConfig.STATUS_DEFAULT;
+
+    protected int mSpeedRefreshUiTime = DownloadConfig.SPEED_REFRESH_UI_TIME ;
     // 文件存储路径
     protected String mSaveFilePath = Environment.getExternalStorageDirectory() +
             File.separator +"mickydown"+File.separator;
@@ -56,7 +60,7 @@ public class DownloadManager implements DownloadProgressListener{
 
     @Override
     public void progress(long read, long contentLength, final boolean done) {
-        Log.d(TAG, "progress : " + "read = " + read + "contentLength = " + contentLength);
+       // Log.d(TAG, "progress : " + "read = " + read + "contentLength = " + contentLength);
         // 该方法仍然是在子线程，如果想要调用进度回调，需要切换到主线程，否则的话，会在子线程更新UI，直接错误
         // 如果断点续传，重新请求的文件大小是从断点处到最后的大小，不是整个文件的大小，info中的存储的总长度是
         // 整个文件的大小，所以某一时刻总文件的大小可能会大于从某个断点处请求的文件的总大小。此时read的大小为
@@ -68,16 +72,19 @@ public class DownloadManager implements DownloadProgressListener{
             //  重新开始一个下载
             info.setContentLength(contentLength);
         }
+        // 粗略计算下下载速度
+         getSpeed(read);
         // 设置已经下载的大小
         info.setReadLength(read);
-
+        // 设置状态下载中
+        mDownStatus = DownloadConfig.STATUS_DOWNNING;
         // 通过RxJava的方法，将回掉结果转接到主线程，防止刷新UI时崩溃
         Observable.just(1).observeOn(AndroidSchedulers.mainThread()).subscribe(new Consumer<Integer>() {
             @Override
             public void accept(Integer integer) throws Exception {
                 if (progressObserver != null)
                 {
-                    progressObserver.progressChanger(info.getReadLength(), info.getContentLength(), done, info.getUrl());
+                    progressObserver.progress(info.getReadLength(), info.getContentLength(), done, info.getUrl(),speed);
                 }
             }
         });
@@ -89,20 +96,29 @@ public class DownloadManager implements DownloadProgressListener{
      */
     public void start(String url)
     {
+        // 判断链接是否已经在下载
+        if (mDownStatus == DownloadConfig.STATUS_DOWNNING )
+        {
+            // 正在下载中
+            Log.d(TAG,"正在下载中，请勿重复添加");
+            return;
+        }
         // 首先查找此链接数据库中是否已经存在对应的下载
-        info = App.getInstances().getDaoSession().getDownloadInfoDao().queryBuilder().where(DownloadInfoDao.Properties.Url.eq(url)).unique();
+        info = FileDown.getFileDown().getDaoSession().getDownloadInfoDao().queryBuilder().where(DownloadInfoDao.Properties.Url.eq(url)).unique();
         if (info == null)
         {
             info = new DownloadInfo();
         }
+
         // 判断是否已经下载完成
         boolean isComplete = info.getIsComplete();
         if (isComplete)
         {
+            mDownStatus = DownloadConfig.STATUS_COMPLETE;
             // 回掉下载完成 不在继续下载
             if (progressObserver != null)
             {
-                progressObserver.complete(url);
+                progressObserver.complete(url, new File(mSaveFilePath+getFileName(url)));
             }
             return;
         }
@@ -130,8 +146,8 @@ public class DownloadManager implements DownloadProgressListener{
             info.setService(service);
         }else
         {
-            // 获取保存的实例
-            service = info.getService();
+            // 保存的实例
+            info.setService(service);
         }
         // 开始下载
         download();
@@ -160,6 +176,10 @@ public class DownloadManager implements DownloadProgressListener{
                     @Override
                     public void onSubscribe(@NonNull Disposable d) {
                         disposable = d;
+                        mDownStatus = DownloadConfig.STATUS_START;
+                        // 初始化开始下载的时间，计算速度
+                        lastTimeStamp = System.currentTimeMillis();
+                        progressObserver.start(info.getUrl());
                     }
 
                     @Override
@@ -172,15 +192,18 @@ public class DownloadManager implements DownloadProgressListener{
                         Log.d(TAG,"onError："+e.getMessage());
                         // 下载错误，保存当前的info
                         saveInfoToDb();
+                        mDownStatus = DownloadConfig.STATUS_ERROR;
+                        progressObserver.error(info.getUrl(),e.getMessage());
                     }
 
                     @Override
                     public void onComplete() {
                         Log.d(TAG,"onComplete");
                         // 下载完成，设置标识为已完成状态
+                        mDownStatus= DownloadConfig.STATUS_COMPLETE;
                         if (progressObserver != null)
                         {
-                            progressObserver.complete(info.getUrl());
+                            progressObserver.complete(info.getUrl(),new File(info.getLocalPath()));
                         }
                         info.setIsComplete(true);
                         saveInfoToDb();
@@ -194,11 +217,18 @@ public class DownloadManager implements DownloadProgressListener{
      */
     public void pause()
     {
+        if (mDownStatus == DownloadConfig.STATUS_PAUSE)
+        {
+            return;
+        }
+
         if (disposable != null)
         {
             disposable.dispose();
             // 暂停时需要保持相关信息
             saveInfoToDb();
+            mDownStatus = DownloadConfig.STATUS_PAUSE;
+            progressObserver.pause(info.getUrl());
         }
     }
 
@@ -207,7 +237,29 @@ public class DownloadManager implements DownloadProgressListener{
      */
     public void resume()
     {
+        if (mDownStatus != DownloadConfig.STATUS_PAUSE)
+        {
+            return;
+        }
+
         download();
+        //mDownStatus = DownloadConfig.STATUS_RESUME;
+    }
+
+    public void delete()
+    {
+        if (mDownStatus == DownloadConfig.STATUS_DELETE)
+        {
+            return;
+        }
+
+        // 首先暂停下载
+        pause();
+        // 删除下载信息
+        deleteDownInfo();
+        mDownStatus = DownloadConfig.STATUS_DELETE;
+        progressObserver.delete(info.getUrl());
+
     }
 
     /**
@@ -229,13 +281,25 @@ public class DownloadManager implements DownloadProgressListener{
      */
     protected void saveInfoToDb()
     {
-        App.getInstances().getDaoSession().getDownloadInfoDao().save(info);
+        FileDown.getFileDown().getDaoSession().getDownloadInfoDao().save(info);
     }
 
+
+    /**
+     * 删除下载信息
+     */
+    protected void deleteDownInfo()
+    {
+        FileDown.getFileDown().getDaoSession().getDownloadInfoDao().delete(info);
+    }
+
+    /**
+     * 清楚所有的下载数据数据
+     */
     public void cleanDataBase()
     {
-        App.getInstances().getDaoSession().getDownloadInfoDao().deleteAll();
-      //  Log.d(TAG,"DataBase："+App.getInstances().getDaoSession().getDownloadInfoDao().)
+        FileDown.getFileDown().getDaoSession().getDownloadInfoDao().deleteAll();
+      //  Log.d(TAG,"DataBase："+FileDown.getInstances().getDaoSession().getDownloadInfoDao().)
     }
 
     public String getDiskCacheDir(Context context) {
@@ -249,16 +313,22 @@ public class DownloadManager implements DownloadProgressListener{
         return cachePath;
     }
 
-    /**
-     * 进度回掉接口
-     */
-    public interface ProgressListener
+
+
+    // 最近一次计算时间
+    long lastTimeStamp;
+    // 下载速度
+    long speed;
+    protected long getSpeed(long read)
     {
-        void progressChanger(long read, long contentLength, boolean done, String url);
-        void complete(String url);
+       long nowTimeStamp = System.currentTimeMillis();
+       if (nowTimeStamp - lastTimeStamp < mSpeedRefreshUiTime) return speed;
+       speed = (read - info.getReadLength() / ((nowTimeStamp - lastTimeStamp)/1000));
+       lastTimeStamp = nowTimeStamp;
+       return speed;
     }
 
-    public void setProgressListener(ProgressListener progressObserver)
+    public void setProgressListener(DownloadListener progressObserver)
     {
         this.progressObserver = progressObserver;
     }

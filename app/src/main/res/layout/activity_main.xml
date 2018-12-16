@@ -40,6 +40,13 @@
             android:text="恢复下载"
             android:id="@+id/resume"
             android:layout_marginLeft="5dp"/>
+        <TextView
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="删除下载"
+            android:id="@+id/delete"
+            android:layout_marginLeft="5dp"/>
     </LinearLayout>
     <Button
         android:layout_width="match_parent"
@@ -47,6 +54,11 @@
         android:layout_marginTop="20dp"
         android:text="清空数据库"
         android:id="@+id/clean"/>
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="多任务下载列表"
+        android:layout_marginTop="10dp"/>
     <android.support.v7.widget.RecyclerView
         android:layout_width="match_parent"
         android:layout_height="match_parent"

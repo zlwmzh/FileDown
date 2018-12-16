@@ -4,7 +4,7 @@
     android:layout_height="80dp"
     android:paddingLeft="10dp"
     android:paddingRight="10dp">
-    <ImageView
+    <com.facebook.drawee.view.SimpleDraweeView
         android:layout_width="60dp"
         android:layout_height="60dp"
         android:layout_centerVertical="true"
@@ -18,8 +18,31 @@
         android:layout_toRightOf="@+id/cover"
         android:text="文件1"
         android:textColor="@android:color/black"
-        android:textSize="20sp"
+        android:textSize="18sp"
+        android:lines="1"
+        android:ellipsize="end"
         android:id="@+id/title"
+        />
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerVertical="true"
+        android:layout_toRightOf="@+id/cover"
+        android:text="100%    200kb/s"
+        android:layout_above="@+id/item_progress"
+        android:textSize="12sp"
+        android:layout_marginBottom="1dp"
+        android:id="@+id/percentandspeed"
+        />
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:text="下载状态"
+        android:layout_above="@+id/item_progress"
+        android:textSize="12sp"
+        android:layout_marginBottom="1dp"
+        android:id="@+id/item_downstatus"
         />
     <ProgressBar
         android:layout_width="match_parent"
