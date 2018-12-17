@@ -8,11 +8,14 @@ import android.support.v4.content.LocalBroadcastManager;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.greendao.gen.DownloadInfoDao;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created by Micky on 2018/12/14.
@@ -26,6 +29,8 @@ public class DownloadManngerService extends Service{
     protected int maxThreadCount = DownloadConfig.MAX_DOWN_THREAD_COUNT;
     // 当前正在下载的线程数量
     protected int mCurrentThreadCount = 0;
+    // 文件保存位置
+    protected String mSavePath;
     // 存放处理进行中的任务的map集合,url做为键
     protected Map<String,DownloadManager> mapThread;
     // 存放代下载任务的url集合
@@ -49,8 +54,14 @@ public class DownloadManngerService extends Service{
         int action = intent.getIntExtra(DownloadConfig.ACTION,DownloadConfig.ACTION_DEFAULT);
         // 获取相关连接
         String url = intent.getStringExtra(DownloadConfig.URL);
+        // 获取下载链接的集合
+        List<String> list = intent.getStringArrayListExtra(DownloadConfig.URL_ARRAY);
+        // 线程最大数量
+        maxThreadCount = intent.getIntExtra(DownloadConfig.MAX_THREAD_COUNT,DownloadConfig.MAX_DOWN_THREAD_COUNT);
+        // 文件保存位置
+        mSavePath = intent.getStringExtra(DownloadConfig.LOCAL_PATH);
         // 处理相关响应
-        respondAction(action,url);
+        respondAction(action,url,list);
         return super.onStartCommand(intent, flags, startId);
     }
 
@@ -66,16 +77,17 @@ public class DownloadManngerService extends Service{
     protected void init()
     {
        // 初始化话map
-        mapThread = new HashMap<>(maxThreadCount);
-        mWaitThread = new HashMap<>();
+        mapThread = new ConcurrentHashMap<>(maxThreadCount);
+        mWaitThread = new ConcurrentHashMap<>();
     }
 
     /**
      *  处理相关操作：开始下载、暂停下载、恢复下载、重新下载、删除下载
      * @param action 执行动作
      * @param url 下载连接
+     * @param list 下载链接集合
      */
-    protected void respondAction(int action, String url)
+    protected void respondAction(int action, String url, List<String> list)
     {
         switch (action)
         {
@@ -94,6 +106,15 @@ public class DownloadManngerService extends Service{
              case DownloadConfig.ACTION_DELETE: // 删除下载
                 delete(url);
                 break;
+             case DownloadConfig.ACTION_START_ALL:  // 开始全部任务
+                 start(list);
+                 break;
+             case DownloadConfig.ACTION_PAUSE_ALL:  // 暂停下载任务
+                 pauseAllTash();
+                 break;
+             case DownloadConfig.ACTION_DELETE_ALL: // 删除所有任务
+                 deleteAllTask();
+                 break;
              default:
 
                 break;
@@ -110,10 +131,7 @@ public class DownloadManngerService extends Service{
        if (mCurrentThreadCount >= maxThreadCount)
        {
            // 当前进行的线程数量 大于 最大允许进行的最大线程
-           // 下载任务需要等待
-           listener.wait(url);
-           // 加入等待队列
-           mWaitThread.put(url,url);
+           wait(url);
            return;
        }
         DownloadManager downloadManager = null;
@@ -128,6 +146,7 @@ public class DownloadManngerService extends Service{
             mapThread.put(url,downloadManager);
         }
        // 开始下载
+       downloadManager.setSavePath(mSavePath);
        downloadManager.setProgressListener(listener);
        downloadManager.start(url);
 
@@ -146,6 +165,15 @@ public class DownloadManngerService extends Service{
         if (downloadManager != null)
         {
             downloadManager.pause();
+        }else
+        {
+            // 查询是否在等待队列中
+            if (mWaitThread.containsKey(url))
+            {
+                // 从等待队列中移除链接，回掉暂停下载的监听
+                mWaitThread.remove(url);
+                listener.pause(url);
+            }
         }
     }
 
@@ -160,6 +188,10 @@ public class DownloadManngerService extends Service{
         if (downloadManager != null)
         {
             downloadManager.resume();
+        }else
+        {
+            // 等待下载
+            wait(url);
         }
     }
 
@@ -176,6 +208,115 @@ public class DownloadManngerService extends Service{
         {
             // 执行删除操作
             downloadManager.delete();
+            // 正在进行中任务列表移除url
+            mapThread.remove(url);
+            return;
+        }
+        // 等待任务列表
+        if (mWaitThread.containsKey(url))
+        {
+            mWaitThread.remove(url);
+            listener.delete(url);
+            return;
+        }
+        // 删除已经下载完成或者下载失败的
+        DownloadInfo info =  FileDown.getFileDown().getDaoSession().getDownloadInfoDao().queryBuilder().where(DownloadInfoDao.Properties.Url.eq(url)).unique();
+        if (info == null) return;
+        listener.delete(info.getUrl());
+        // 删除已下载下载的文件和数据库中的文件
+        FileUtil.deleteFile(info.getLocalPath());
+        FileDown.getFileDown().getDaoSession().getDownloadInfoDao().delete(info);
+    }
+
+    /**
+     * 等待下载
+     * @param url
+     */
+    protected void wait(String url)
+    {
+        // 当前进行的线程数量 大于 最大允许进行的最大线程
+        // 下载任务需要等待
+        listener.wait(url);
+        // 加入等待队列
+        mWaitThread.put(url,url);
+    }
+
+    /**
+     * 批量开始任务：开启多任务下载
+     * @param list
+     */
+    protected void start(List<String> list)
+    {
+        // 判断任务列表是否为空
+        if (list.isEmpty()) return;
+        for (String url:list)
+        {
+            // 开始任务
+            if (mapThread.containsKey(url))
+            {
+                // 之前已经添加过的直接恢复下载
+                resume(url);
+            }else
+            {
+                // 没有添加过的，开始第一次下载
+                start(url);
+            }
+        }
+    }
+
+    /**
+     * 批量暂停任务
+     * @param list
+     */
+    protected void pause(List<String> list)
+    {
+        // 判断暂停任务
+        if (list.isEmpty()) return;
+        for (String url : list)
+        {
+            pause(url);
+        }
+    }
+
+    /**
+     * 删除所有的任务
+     * {只能删除进行和等待下载的任务，如果任务完成或者是下载失败，则需要用户自行删除}
+     */
+    protected void deleteAllTask()
+    {
+        // 首先删除正在进行的
+        for (String url: mapThread.keySet())
+        {
+            delete(url);
+        }
+        // 然后删除等待中的
+        for (String url:mWaitThread.keySet())
+        {
+            delete(url);
+        }
+        // 清空本地数据存储库
+        List<DownloadInfo> list = FileDown.getFileDown().getDaoSession().getDownloadInfoDao().queryBuilder().list();
+        if (list == null) return;
+        for (DownloadInfo info : list)
+        {
+            delete(info.getUrl());
+        }
+    }
+
+    /**
+     * 暂停所有的进行中的任务
+     */
+    protected void pauseAllTash()
+    {
+        // 首先暂停正在进行的
+        for (String url: mapThread.keySet())
+        {
+            pause(url);
+        }
+        // 然后暂停等待中的
+        for (String url:mWaitThread.keySet())
+        {
+            pause(url);
         }
     }
 
@@ -317,7 +458,7 @@ public class DownloadManngerService extends Service{
             // TODO
             return;
         }
-        // 如果是暂停状态，且后面有排队的任务，从进行中任务移除暂停的任务
+       // 如果是暂停状态，且后面有排队的任务，从进行中任务移除暂停的任务
         if (downStatus == DownloadConfig.STATUS_PAUSE)
         {
             mapThread.remove(url);

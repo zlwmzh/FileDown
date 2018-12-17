@@ -23,13 +23,19 @@ public class DownloadConfig {
     public static final int ACTION_RESTART = 0x03;
     public static final int ACTION_DELETE = 0x04;
     public static final int ACTION_DEFAULT = 0x05;
+    public static final int ACTION_START_ALL = 0x14;
+    public static final int ACTION_PAUSE_ALL = 0x15;
+    public static final int ACTION_DELETE_ALL =0x16;
 
     // 相关取值关键字
     public static final String ACTION = "action";
     public static final String URL = "url";
+    public static final String URL_ARRAY = "url_array";
     public static final String READ = "read";
     public static final String TOTAL = "total";
     public static final String SPEED = "speed";
+    public static final String MAX_THREAD_COUNT = "max_thread_count";
+    public static final String SAVE_PATH = "save_path";
     public static final String IS_COMPLETE = "is_complete";
     public static final String LOCAL_PATH = "local_path";
     public static final String ERROR_MESSAGE = "error_message";

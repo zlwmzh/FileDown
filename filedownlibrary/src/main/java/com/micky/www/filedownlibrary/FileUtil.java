@@ -52,4 +52,17 @@ public class FileUtil {
             randomAccessFile.close();
         }
     }
+
+    /**
+     * 删除文件
+     * @param path
+     */
+    public static void deleteFile(String path)
+    {
+       File file = new File(path);
+       if (file.exists())
+       {
+           file.delete();
+       }
+    }
 }

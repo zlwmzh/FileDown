@@ -2,6 +2,7 @@ package com.micky.www.filedownlibrary;
 
 import android.content.Context;
 import android.os.Environment;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.greendao.gen.DownloadInfoDao;
@@ -36,7 +37,10 @@ public class DownloadManager implements DownloadProgressListener{
     protected DownloadInfo info;
     protected DownLoadService service;
 
+    // 下载任务的网络请求操作对象
     private Disposable disposable;
+    // 轮询操作的对象
+    private Disposable mResearchProgress;
     // 当前状态
     private int mDownStatus = DownloadConfig.STATUS_DEFAULT;
 
@@ -46,7 +50,7 @@ public class DownloadManager implements DownloadProgressListener{
             File.separator +"mickydown"+File.separator;
     private DownloadManager()
     {
-
+       // delayProgress();
     }
 
     /**
@@ -72,14 +76,14 @@ public class DownloadManager implements DownloadProgressListener{
             //  重新开始一个下载
             info.setContentLength(contentLength);
         }
-        // 粗略计算下下载速度
-         getSpeed(read);
         // 设置已经下载的大小
         info.setReadLength(read);
+        // 设置是否完成
+        info.setIsComplete(done);
         // 设置状态下载中
         mDownStatus = DownloadConfig.STATUS_DOWNNING;
         // 通过RxJava的方法，将回掉结果转接到主线程，防止刷新UI时崩溃
-        Observable.just(1).observeOn(AndroidSchedulers.mainThread()).subscribe(new Consumer<Integer>() {
+        /*Observable.just(1).observeOn(AndroidSchedulers.mainThread()).subscribe(new Consumer<Integer>() {
             @Override
             public void accept(Integer integer) throws Exception {
                 if (progressObserver != null)
@@ -87,7 +91,19 @@ public class DownloadManager implements DownloadProgressListener{
                     progressObserver.progress(info.getReadLength(), info.getContentLength(), done, info.getUrl(),speed);
                 }
             }
-        });
+        });*/
+    }
+
+    /**
+     * 设置保存的位置
+     * @param path 本地路径
+     */
+    public void setSavePath(String path)
+    {
+        if (!TextUtils.isEmpty(path))
+        {
+            this.mSaveFilePath = path;
+        }
     }
 
     /**
@@ -149,6 +165,8 @@ public class DownloadManager implements DownloadProgressListener{
             // 保存的实例
             info.setService(service);
         }
+        // 开启轮询
+        delayProgress();
         // 开始下载
         download();
     }
@@ -177,8 +195,10 @@ public class DownloadManager implements DownloadProgressListener{
                     public void onSubscribe(@NonNull Disposable d) {
                         disposable = d;
                         mDownStatus = DownloadConfig.STATUS_START;
-                        // 初始化开始下载的时间，计算速度
+                        // 初始化开始下载的时间和已经下载的数据，计算速度
                         lastTimeStamp = System.currentTimeMillis();
+                        lastRead = info.getReadLength();
+
                         progressObserver.start(info.getUrl());
                     }
 
@@ -241,7 +261,8 @@ public class DownloadManager implements DownloadProgressListener{
         {
             return;
         }
-
+        // 开启轮询
+        delayProgress();
         download();
         //mDownStatus = DownloadConfig.STATUS_RESUME;
     }
@@ -252,14 +273,14 @@ public class DownloadManager implements DownloadProgressListener{
         {
             return;
         }
-
         // 首先暂停下载
         pause();
         // 删除下载信息
         deleteDownInfo();
+        // 删除已经下载的文件
+        FileUtil.deleteFile(info.getLocalPath());
         mDownStatus = DownloadConfig.STATUS_DELETE;
         progressObserver.delete(info.getUrl());
-
     }
 
     /**
@@ -313,20 +334,61 @@ public class DownloadManager implements DownloadProgressListener{
         return cachePath;
     }
 
+    /**
+     * 延迟回掉进度
+     */
+    protected void  delayProgress()
+    {
+        mResearchProgress = Observable.interval(mSpeedRefreshUiTime,TimeUnit.MILLISECONDS)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Consumer<Long>() {
+                    @Override
+                    public void accept(Long aLong) throws Exception {
+                        if (mDownStatus == DownloadConfig.STATUS_DOWNNING)
+                        {
+                            // 如果是正在下载的话，回掉进度：
+                            if (progressObserver != null)
+                            {
+                                // 计算下载速度
+                                getSpeed();
+                                progressObserver.progress(info.getReadLength(), info.getContentLength(), info.getIsComplete(), info.getUrl(),speed);
+                            }
+                        }else
+                        {
+                            // 其他情况关闭轮询
+                            if (mResearchProgress != null)
+                            {
+                                mResearchProgress.dispose();
+                            }
+                        }
+                    }
+                });
+    }
 
 
     // 最近一次计算时间
     long lastTimeStamp;
+    // 上次读写的数据
+    long lastRead;
     // 下载速度
     long speed;
-    protected long getSpeed(long read)
+
+    /**
+     * long类型的下载速度
+     * @return
+     */
+    protected long getSpeed()
     {
        long nowTimeStamp = System.currentTimeMillis();
        if (nowTimeStamp - lastTimeStamp < mSpeedRefreshUiTime) return speed;
-       speed = (read - info.getReadLength() / ((nowTimeStamp - lastTimeStamp)/1000));
-       lastTimeStamp = nowTimeStamp;
+       speed = ((info.getReadLength() - lastRead) / ((nowTimeStamp - lastTimeStamp)/1000));
+       Log.d(TAG,"瞬时下载量："+(info.getReadLength() - lastRead)+"；speed："+speed);
+        lastTimeStamp = nowTimeStamp;
+       lastRead = info.getReadLength();
        return speed;
     }
+
+
 
     public void setProgressListener(DownloadListener progressObserver)
     {
