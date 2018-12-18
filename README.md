@@ -155,5 +155,24 @@ mHelper.pause(url);
  ### 主要方法
  |方法名|作用|
  |--|--|
+ |getInstance()|静态方法，以单列方式获取下载帮助类对象|
+ |setSavePath(String localPath)|设置文件保存路径|
+ |setMaxTask(int count)|设置最大下载进程数（同时可以下载的最大数量，默认三个）|
+ |registerListener(DownloadListener listener)|注册监听，回掉当前下载状态|
+ |unRegisterListener()|解除监听，与registerListener配对使用，页面销毁时调用，防止内存泄漏|
+ |start(String url)|开始单个文件下载|
+ |start(List<String> list)|开始多个下载任务|
+ |pause(String url)|暂停单个下载任务|
+ |pauseAll()|暂停所有进行中的任务|
+ |resume(String url)|恢复下载任务（暂停状态恢复下载）|
+ |delete(String url)|删除下载任务|
+ |deleteAll()|删除所有下载任务|
+ |getLocalFilePathFromUrl(String url)|根据下载链接获取本地存储路径|
+ 
+ ### 其他工具类
+ SpeedUtils：
+ |方法名|作用|
+ |--|--|
+ |FormetFileSize(long file)|long类型的下载速度转换为字符串“b/s、kb/s、m/s、g/s”|
  
  
