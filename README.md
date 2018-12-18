@@ -171,6 +171,7 @@ mHelper.pause(url);
  
  ### 其他工具类
  SpeedUtils：
+ 
  |方法名|作用|
  |--|--|
  |FormetFileSize(long file)|long类型的下载速度转换为字符串“b/s、kb/s、m/s、g/s”|
