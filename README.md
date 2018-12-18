@@ -181,4 +181,5 @@ mHelper.pause(url);
  |--|--|
  |FormetFileSize(long file)|long类型的下载速度转换为字符串“b/s、kb/s、m/s、g/s”|
  
+ 如果使用中遇到什么问题，请联系邮箱：1354319679@qq.com
  
